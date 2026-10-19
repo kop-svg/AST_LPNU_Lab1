@@ -1,0 +1,162 @@
+using System;
+using System.Reflection;
+using AnalaizerClassLibrary;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+namespace AnalaizerClassTests
+{
+    /// <summary>
+    /// Лабораторна робота №1, варіант 6.
+    /// Модульні тести для приватних методів AnalaizerClass:
+    ///   - IsOperator(string)
+    ///   - InsertSymbol(string, char, int)
+    /// Тестові дані зчитуються з бази CalcTestsDb (SQL Server LocalDB).
+    /// Приватні методи викликаються через Reflection.
+    /// </summary>
+    [TestClass]
+    public class AnalaizerClassPrivateMethodsTests
+    {
+        private const string ConnStr =
+            @"Data Source=(localdb)\MSSQLLocalDB;Initial Catalog=CalcTestsDb;Integrated Security=True";
+
+        private const string Provider = "System.Data.SqlClient";
+
+        public TestContext TestContext { get; set; }
+
+        private static readonly MethodInfo IsOperatorMethod =
+            typeof(AnalaizerClass).GetMethod(
+                "IsOperator",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+        private static readonly MethodInfo InsertSymbolMethod =
+            typeof(AnalaizerClass).GetMethod(
+                "InsertSymbol",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+        private static bool CallIsOperator(string s)
+        {
+            return (bool)IsOperatorMethod.Invoke(null, new object[] { s });
+        }
+
+        private static string CallInsertSymbol(string input, char symbol, int position)
+        {
+            return (string)InsertSymbolMethod.Invoke(null, new object[] { input, symbol, position });
+        }
+
+        // ------------------------------------------------------------------
+        // Перевірка, що методи взагалі знайдені через Reflection
+        // ------------------------------------------------------------------
+
+        [TestMethod]
+        public void Reflection_IsOperator_MethodExists()
+        {
+            Assert.IsNotNull(IsOperatorMethod, "Метод IsOperator не знайдено");
+            Assert.AreEqual(typeof(bool), IsOperatorMethod.ReturnType);
+        }
+
+        [TestMethod]
+        public void Reflection_InsertSymbol_MethodExists()
+        {
+            Assert.IsNotNull(InsertSymbolMethod, "Метод InsertSymbol не знайдено");
+            Assert.AreEqual(typeof(string), InsertSymbolMethod.ReturnType);
+        }
+
+        // ------------------------------------------------------------------
+        // IsOperator: дані з БД (таблиця IsOperatorData)
+        // ------------------------------------------------------------------
+
+        [TestMethod]
+        [DataSource(Provider, ConnStr, "IsOperatorData", DataAccessMethod.Sequential)]
+        public void IsOperator_DataDriven_ReturnsExpected()
+        {
+            string input = TestContext.DataRow["Input"].ToString();
+            bool expected = Convert.ToBoolean(TestContext.DataRow["Expected"]);
+            string description = TestContext.DataRow["Description"].ToString();
+
+            bool actual = CallIsOperator(input);
+
+            Assert.AreEqual(
+                expected,
+                actual,
+                $"IsOperator(\"{input}\"): {description}");
+        }
+
+        // ------------------------------------------------------------------
+        // IsOperator: null не можна зберегти в таблиці з NOT NULL, тому окремо
+        // ------------------------------------------------------------------
+
+        [TestMethod]
+        public void IsOperator_Null_ThrowsNullReferenceException()
+        {
+            try
+            {
+                CallIsOperator(null);
+                Assert.Fail("Очікувався виняток NullReferenceException");
+            }
+            catch (TargetInvocationException ex)
+            {
+                Assert.IsInstanceOfType(ex.InnerException, typeof(NullReferenceException));
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // InsertSymbol: дані з БД (таблиця InsertSymbolData)
+        // ------------------------------------------------------------------
+
+        [TestMethod]
+        [DataSource(Provider, ConnStr, "InsertSymbolData", DataAccessMethod.Sequential)]
+        public void InsertSymbol_DataDriven_ReturnsExpected()
+        {
+            string input = TestContext.DataRow["Input"].ToString();
+            char symbol = Convert.ToChar(TestContext.DataRow["Symbol"]);
+            int position = Convert.ToInt32(TestContext.DataRow["Position"]);
+            string expected = TestContext.DataRow["Expected"].ToString();
+            string description = TestContext.DataRow["Description"].ToString();
+
+            string actual = CallInsertSymbol(input, symbol, position);
+
+            Assert.AreEqual(
+                expected,
+                actual,
+                $"InsertSymbol(\"{input}\", '{symbol}', {position}): {description}");
+        }
+
+        [TestMethod]
+        public void InsertSymbol_Null_ThrowsNullReferenceException()
+        {
+            try
+            {
+                CallInsertSymbol(null, 'X', 0);
+                Assert.Fail("Очікувався виняток NullReferenceException");
+            }
+            catch (TargetInvocationException ex)
+            {
+                Assert.IsInstanceOfType(ex.InnerException, typeof(NullReferenceException));
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // Додаткові перевірки властивостей InsertSymbol
+        // ------------------------------------------------------------------
+
+        [TestMethod]
+        public void InsertSymbol_ValidPosition_KeepsLength()
+        {
+            const string input = "abcdef";
+            for (int pos = 0; pos < input.Length; pos++)
+            {
+                string result = CallInsertSymbol(input, 'X', pos);
+                Assert.AreEqual(input.Length, result.Length, $"position = {pos}");
+                Assert.AreEqual('X', result[pos], $"position = {pos}");
+            }
+        }
+
+        [TestMethod]
+        public void InsertSymbol_DoesNotModifyOriginalString()
+        {
+            string input = "abc";
+            CallInsertSymbol(input, 'X', 1);
+            Assert.AreEqual("abc", input);
+        }
+    }
+}
